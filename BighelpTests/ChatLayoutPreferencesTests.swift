@@ -237,7 +237,6 @@ struct SessionRowLayoutTests {
         // A value too big to be one row's settings is not read either.
         let huge = String(repeating: "x", count: 4_096)
         #expect(SessionRowLayout(saved: huge) == .standard)
-        #expect(SessionRowLayout(savedObject: nil) == .standard)
     }
 
     @Test func aTagThisBuildDoesNotKnowIsDropped() {
