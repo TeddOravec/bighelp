@@ -618,11 +618,6 @@ struct SessionRowLayout: Equatable, Sendable {
                   showsTime: raw.time)
     }
 
-    /// What UserDefaults holds: the saved JSON text.
-    init(savedObject object: Any?) {
-        self.init(saved: object as? String)
-    }
-
     var saved: String? {
         let raw = Raw(chips: chips.map(\.rawValue), placement: placement.rawValue,
                       preview: showsPreview, time: showsTime)
