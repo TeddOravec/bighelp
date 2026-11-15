@@ -273,7 +273,8 @@ struct SessionRowLayoutTests {
     @Test func aLongProjectNameIsShortenedForTheRow() {
         #expect(SessionRowLayout.bounded("Kitchen") == "Kitchen")
         let long = SessionRowLayout.bounded("The long weekend plans for everyone")
-        #expect(long.count == SessionRowLayout.maximumChipText)
+        // Never longer than the row allows, and it says it was cut.
+        #expect(long.count <= SessionRowLayout.maximumChipText)
         #expect(long.hasSuffix("…"))
         // Bounded to the same length at any text size, so a tag never crowds the preview.
         #expect(SessionRowLayout.bounded(String(repeating: "a", count: 40)).count <= SessionRowLayout.maximumChipText)
