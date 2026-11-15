@@ -34,6 +34,39 @@ final class SettingsLayoutUITests: BighelpUITestCase {
         }
     }
 
+    /// Settings › Chat › Chat rows: a tag added to the row is saved and drawn in the picture at the
+    /// top of the page, which is the same layout every chat in the list reads.
+    @MainActor
+    func testChatRowsPutsATagOnThePicture() throws {
+        let app = makeApp()
+        app.launchArguments = ["-use-demo-fixtures", "-disable-demo-delays"]
+        app.launch()
+        openSettings(in: app)
+
+        settingsRow("settings.menu.chat", in: app).tap()
+        let rows = reach(app.buttons["settings.chat.chat-rows"].firstMatch, in: app)
+        XCTAssertTrue(rows.waitForExistence(timeout: 5), "Chat rows sits with Project names")
+        rows.tap()
+
+        let preview = app.descendants(matching: .any)["chat-rows.preview-row"].firstMatch
+        XCTAssertTrue(preview.waitForExistence(timeout: 5), "The page opens on a picture of the row")
+        XCTAssertTrue(app.descendants(matching: .any)["chat-rows.shown.origin"].waitForExistence(timeout: 5),
+                      "Where it started is on the row out of the box")
+        save("07-chat-rows", app)
+
+        let addProject = app.buttons["chat-rows.add.project"].firstMatch
+        XCTAssertTrue(addProject.waitForExistence(timeout: 5), "Project is offered")
+        addProject.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["chat-rows.shown.project"].waitForExistence(timeout: 5),
+                      "The added tag is in the row")
+        XCTAssertFalse(app.buttons["chat-rows.add.project"].exists, "A shown tag is no longer offered")
+
+        // Three is the most a row shows.
+        app.buttons["chat-rows.add.scheduled"].firstMatch.tap()
+        XCTAssertFalse(app.buttons["chat-rows.add.group"].isEnabled, "A full row offers no more")
+        save("08-chat-rows-three", app)
+    }
+
     /// Settings › Chat, Notifications and Device access read in named groups (#974): each control sits
     /// under a header, a row's second line is its value or a short hint, and Nerd Mode's Advanced
     /// groups come last (the test base turns Nerd Mode on). The second pass is dark at a large text size.
