@@ -305,6 +305,12 @@ extension SettingsView {
             }
             .accessibilityIdentifier("settings.chat.chat-projects")
 
+            settingsLink(to: .chatRows) {
+                settingTitle(String(localized: "Chat rows"))
+            }
+            .accessibilityIdentifier("settings.chat.chat-rows")
+            .driveTarget("settings.chat.chat-rows")
+
             if let archivedChats {
                 NavigationLink {
                     settingsDone(ArchivedChatsView(catalog: archivedChats.catalog, agentName: archivedChats.agentName,

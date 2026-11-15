@@ -214,6 +214,7 @@ struct SettingsView: View {
         case .section(let section): self.destination(for: section)
         case .you: settingsPage(title: String(localized: "You")) { localIdentity }
         case .chatLayout: ChatLayoutSettingsView()
+        case .chatRows: SessionRowSettingsView()
 
         case .thinking: ThinkingLookSettingsView()
         case .apps: connectionsPage

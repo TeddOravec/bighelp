@@ -209,3 +209,74 @@ struct ChatLayoutPreferencesTests {
         #expect(VoiceProviderSpec.builtIn.filter(\.supportsServerURL).map(\.id) == ["openai"])
     }
 }
+
+/// Settings › Chat › Chat rows: the tags a chat row carries, in order, and where they sit.
+struct SessionRowLayoutTests {
+    @Test func theDefaultRowIsTheRowBighelpDrawsToday() {
+        let standard = SessionRowLayout.standard
+        // Where it started, beside the preview, with the time. Nothing else moves.
+        #expect(standard.chips == [.origin])
+        #expect(standard.placement == .besidePreview)
+        #expect(standard.showsPreview)
+        #expect(standard.showsTime)
+        #expect(SessionRowLayout(saved: standard.saved) == standard)
+    }
+
+    @Test func aSavedRowComesBackTheWayItWasSet() {
+        let row = SessionRowLayout(chips: [.project, .origin, .scheduled],
+                                   placement: .abovePreview, showsPreview: false, showsTime: true)
+        #expect(SessionRowLayout(saved: row.saved) == row)
+        // Nothing saved is the default, not an empty row.
+        #expect(SessionRowLayout(saved: nil) == .standard)
+    }
+
+    @Test func unreadableSavedTextIsTheStandardRow() {
+        for text in ["", "{}", "not json", "[]", "{\"chips\":[]}"] {
+            #expect(SessionRowLayout(saved: text) == .standard, "\(text)")
+        }
+        // A value too big to be one row's settings is not read either.
+        let huge = String(repeating: "x", count: 4_096)
+        #expect(SessionRowLayout(saved: huge) == .standard)
+        #expect(SessionRowLayout(savedObject: nil) == .standard)
+    }
+
+    @Test func aTagThisBuildDoesNotKnowIsDropped() {
+        let text = "{\"chips\":[\"project\",\"telepathy\"],\"placement\":\"abovePreview\",\"preview\":true,\"time\":false}"
+        let row = SessionRowLayout(saved: text)
+        #expect(row.chips == [.project])
+        #expect(row.placement == .abovePreview)
+        #expect(!row.showsTime)
+        // An unknown placement is the default's, so a row always draws somewhere.
+        let oddPlacement = "{\"chips\":[\"origin\"],\"placement\":\"sideways\",\"preview\":true,\"time\":true}"
+        #expect(SessionRowLayout(saved: oddPlacement).placement == .besidePreview)
+    }
+
+    @Test func aRowShowsThreeTagsAtMostAndNeverOneTwice() {
+        let row = SessionRowLayout(chips: [.origin, .origin, .project, .scheduled, .group, .agents])
+        #expect(row.chips == [.origin, .project, .scheduled])
+        #expect(!row.canShowMore)
+        var grown = row
+        grown.show(.agents)
+        #expect(grown.chips == [.origin, .project, .scheduled])
+        grown.hide(.project)
+        #expect(grown.canShowMore)
+        grown.show(.agents)
+        #expect(grown.chips == [.origin, .scheduled, .agents])
+        #expect(grown.isShown(.agents))
+    }
+
+    @Test func draggingATagChangesTheOrderOnTheRow() {
+        var row = SessionRowLayout(chips: [.origin, .project, .scheduled])
+        row.moveChips(from: IndexSet(integer: 0), to: 3)
+        #expect(row.chips == [.project, .scheduled, .origin])
+    }
+
+    @Test func aLongProjectNameIsShortenedForTheRow() {
+        #expect(SessionRowLayout.bounded("Kitchen") == "Kitchen")
+        let long = SessionRowLayout.bounded("The long weekend plans for everyone")
+        #expect(long.count == SessionRowLayout.maximumChipText)
+        #expect(long.hasSuffix("…"))
+        // Bounded to the same length at any text size, so a tag never crowds the preview.
+        #expect(SessionRowLayout.bounded(String(repeating: "a", count: 40)).count <= SessionRowLayout.maximumChipText)
+    }
+}

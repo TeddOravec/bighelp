@@ -312,3 +312,236 @@ private struct ChatLayoutPreview: View {
         }
     }
 }
+
+/// Settings › Chat › Chat rows: which tags each chat in the list carries under its title, in what
+/// order, and whether they sit beside the preview or on a line of their own. The picture at the top
+/// is drawn from the same `SessionRowLayout` the rows themselves read, so it can't drift from them.
+struct SessionRowSettingsView: View {
+    @AppStorage(SessionRowLayout.key) private var savedLayout = ""
+    @State private var isResetConfirmationPresented = false
+
+    private var layout: SessionRowLayout { SessionRowLayout(saved: savedLayout) }
+
+    /// One change, saved once. Anything unreadable falls back to the standard row, never to a blank.
+    private func update(_ change: (inout SessionRowLayout) -> Void) {
+        var next = layout
+        change(&next)
+        savedLayout = next.saved ?? ""
+    }
+
+    var body: some View {
+        List {
+            Section {
+                SessionRowSettingsPreview(layout: layout)
+                    .listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
+            } footer: {
+                Text("A sample row. Every chat in the list is drawn the same way.")
+            }
+            .listRowBackground(theme.canvas)
+
+            Section {
+                ForEach(layout.chips) { detail in
+                    HStack(spacing: BighelpTokens.space12) {
+                        circleButton("minus.circle.fill", tint: theme.danger,
+                                     label: String(localized: "Hide \(detail.title)"),
+                                     id: "chat-rows.hide.\(detail.rawValue)") {
+                            withAnimation { update { $0.hide(detail) } }
+                        }
+                        tagLabel(detail)
+                    }
+                    // Keeps the hide button's own identifier reachable.
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("chat-rows.shown.\(detail.rawValue)")
+                }
+                .onMove { update { $0.moveChips(from: $0, to: $1) } }
+            } header: {
+                Text("Shown on a row")
+            } footer: {
+                Text("Drag to change the order. A row shows up to \(SessionRowLayout.maximumChips) tags, so the preview keeps its room.")
+            }
+            .listRowBackground(theme.surface)
+
+            Section {
+                ForEach(SessionRowDetail.allCases.filter { !layout.isShown($0) }) { detail in
+                    HStack(spacing: BighelpTokens.space12) {
+                        circleButton("plus.circle.fill",
+                                     tint: layout.canShowMore ? theme.success : theme.tertiaryText,
+                                     label: String(localized: "Show \(detail.title)"),
+                                     id: "chat-rows.add.\(detail.rawValue)") {
+                            withAnimation { update { $0.show(detail) } }
+                        }
+                        .disabled(!layout.canShowMore)
+                        tagLabel(detail)
+                    }
+                    .moveDisabled(true)
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("chat-rows.more.\(detail.rawValue)")
+                }
+            } header: {
+                Text("More to show")
+            } footer: {
+                Text(layout.canShowMore
+                     ? "A tag draws only when the chat has something for it."
+                     : "A row is full. Hide one to add another.")
+            }
+            .listRowBackground(theme.surface)
+
+            Section {
+                Picker("Tags sit", selection: placement) {
+                    ForEach(SessionRowChipPlacement.allCases) { Text($0.title).tag($0) }
+                }
+                .accessibilityIdentifier("chat-rows.placement")
+                Toggle("Preview text", isOn: showsPreview)
+                    .accessibilityIdentifier("chat-rows.preview")
+                Toggle("Time", isOn: showsTime)
+                    .accessibilityIdentifier("chat-rows.time")
+            } header: {
+                Text("Under the title")
+            } footer: {
+                Text("Beside the preview keeps Messages' single line. On their own line keeps the whole preview at every text size.")
+            }
+            .listRowBackground(theme.surface)
+
+            Section {
+                Button("Reset to Default Row", role: .destructive) {
+                    isResetConfirmationPresented = true
+                }
+                .disabled(layout == .standard)
+                .accessibilityIdentifier("chat-rows.reset")
+            }
+            .listRowBackground(theme.surface)
+        }
+        .alert("Reset to the default row?", isPresented: $isResetConfirmationPresented) {
+            Button("Reset", role: .destructive) {
+                withAnimation { savedLayout = SessionRowLayout.standard.saved ?? "" }
+            }
+            .accessibilityIdentifier("chat-rows.reset.confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("A chat shows where it started beside its preview, with its time. Project names in Chat keeps its own line.")
+        }
+        // Handles to drag. Showing and hiding are their own buttons.
+        .environment(\.editMode, .constant(.active))
+        .environment(\.defaultMinListRowHeight, BighelpTokens.hitTarget)
+        .scrollContentBackground(.hidden)
+        .background(BighelpThemeCanvas(theme: theme).ignoresSafeArea())
+        .navigationTitle("Chat rows")
+        .navigationBarTitleDisplayMode(.inline)
+        .accessibilityIdentifier("chat-rows")
+    }
+
+    private var placement: Binding<SessionRowChipPlacement> {
+        Binding(get: { layout.placement }, set: { place in update { $0.placement = place } })
+    }
+
+    private var showsPreview: Binding<Bool> {
+        Binding(get: { layout.showsPreview }, set: { on in update { $0.showsPreview = on } })
+    }
+
+    private var showsTime: Binding<Bool> {
+        Binding(get: { layout.showsTime }, set: { on in update { $0.showsTime = on } })
+    }
+
+    private func circleButton(_ symbol: String, tint: Color, label: String, id: String,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.bighelp(.title3))
+                .foregroundStyle(tint)
+                .frame(minWidth: BighelpTokens.hitTarget, minHeight: BighelpTokens.hitTarget)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier(id)
+    }
+
+    private func tagLabel(_ detail: SessionRowDetail) -> some View {
+        HStack(spacing: BighelpTokens.space12) {
+            BighelpIconTile(systemName: detail.symbol)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(detail.title)
+                    .bighelpFont(.body)
+                    .foregroundStyle(theme.primaryText)
+                Text(detail.detail)
+                    .font(.bighelp(.footnote))
+                    .foregroundStyle(theme.secondaryText)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(minHeight: BighelpTokens.hitTarget)
+        .accessibilityElement(children: .combine)
+    }
+
+    @BighelpThemeReader private var theme
+}
+
+/// A small, static picture of one chat row with the chosen tags. Made-up words only.
+private struct SessionRowSettingsPreview: View {
+    let layout: SessionRowLayout
+    @BighelpThemeReader private var theme
+    @ScaledMetric(relativeTo: .footnote) private var tagSize: CGFloat = 11
+
+    var body: some View {
+        HStack(spacing: BighelpTokens.space12) {
+            Circle()
+                .fill(theme.incomingMessageBackground)
+                .overlay {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 20))
+                        .foregroundStyle(theme.secondaryText)
+                }
+                .frame(width: 52, height: 52)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: BighelpTokens.space8) {
+                    Text("Planning the weekend")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(theme.primaryText)
+                        .lineLimit(1)
+                    Spacer(minLength: BighelpTokens.space4)
+                    if layout.showsTime {
+                        Text("9:41 AM")
+                            .font(.system(size: 13))
+                            .monospacedDigit()
+                            .foregroundStyle(theme.secondaryText)
+                            .lineLimit(1)
+                            .layoutPriority(1)
+                    }
+                }
+                if layout.placement == .abovePreview, !layout.chips.isEmpty {
+                    HStack(spacing: 4) { tags }
+                }
+                HStack(spacing: 6) {
+                    if layout.placement == .besidePreview { tags }
+                    if layout.showsPreview {
+                        Text("Sure. I added two questions and fixed the dates.")
+                            .font(.system(size: 14))
+                            .foregroundStyle(theme.secondaryText)
+                            .lineLimit(1)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: BighelpTokens.hitTarget, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Preview of a chat row with these tags")
+        .accessibilityIdentifier("chat-rows.preview-row")
+    }
+
+    private var tags: some View {
+        ForEach(layout.chips) { detail in
+            SessionRowChip(text: Self.sampleText(detail), size: tagSize)
+        }
+    }
+
+    /// What each tag says on a made-up row.
+    private static func sampleText(_ detail: SessionRowDetail) -> String {
+        switch detail {
+        case .origin: String(localized: "Telegram")
+        case .project: String(localized: "Kitchen")
+        case .scheduled: String(localized: "Scheduled")
+        case .group: String(localized: "Group")
+        case .agents: String(localized: "Tandy, Nova")
+        }
+    }
+}

@@ -29,6 +29,11 @@ struct SessionsView: View {
     /// Settings › Chat › Project names, saved on this device only.
     @AppStorage(ChatLayoutPreferences.showsChatProjectKey)
     private var showsChatProject = ChatLayoutPreferences.showsChatProjectByDefault
+    /// Settings › Appearance › Chat rows: the tags each row carries, in order, and where they sit.
+    @AppStorage(SessionRowLayout.key) private var sessionRowLayoutText = ""
+
+    /// Read once for the whole list, not once per row.
+    private var sessionRowLayout: SessionRowLayout { SessionRowLayout(saved: sessionRowLayoutText) }
     private enum ActionDialog {
         case rename(SessionSummary)
         case delete(SessionSummary)
@@ -799,7 +804,9 @@ struct SessionsView: View {
 
     private func nativeSessionButton(_ session: SessionSummary, model: SessionsModel) -> some View {
         Button { onSelect(session) } label: {
-            SessionRow(session: session, agents: agents, showsProject: showsChatProject && !organizeByProjects)
+            SessionRow(session: session, agents: agents,
+                                              showsProject: showsChatProject && !organizeByProjects,
+                                              layout: sessionRowLayout)
         }
         .buttonStyle(.plain)
         .disabled(mutatingSessionIDs.contains(session.id))
@@ -1150,7 +1157,9 @@ struct SessionsView: View {
                                     Button {
                                         onSelect(session)
                                     } label: {
-                                        SessionRow(session: session, agents: agents, showsProject: showsChatProject && !organizeByProjects)
+                                        SessionRow(session: session, agents: agents,
+                                              showsProject: showsChatProject && !organizeByProjects,
+                                              layout: sessionRowLayout)
                                     }
                                     .buttonStyle(.plain)
                                     .disabled(mutatingSessionIDs.contains(session.id))

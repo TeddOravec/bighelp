@@ -1,16 +1,19 @@
 import Foundation
 import SwiftUI
 
-/// One Messages-style inbox row: the agent avatar doubles as the live status,
-/// then a single title line and a single plain-text preview line, and the chat's
-/// project on a line of its own when `showsProject`.
+/// One Messages-style inbox row: the agent avatar doubles as the live status, then a single
+/// title line, the tags list rows are set to show (where a chat started, its project, ...), a
+/// single plain-text preview line, and the chat's project on a line of its own when `showsProject`.
 struct SessionRow: View {
     let session: SessionSummary
     let agents: AgentDirectoryStore
     /// Settings › Chat › Project names, unless the list groups by project, where
     /// the section header already says it. A line of its own keeps the preview whole at every
-    /// text size.
+    /// text size. The project tag in `layout` replaces it, so a row never says it twice.
     var showsProject = false
+    /// Settings › Appearance › Chat rows: which tags the row shows, in what order, and whether
+    /// they sit beside the preview or on a line of their own.
+    var layout: SessionRowLayout = .standard
 
     static let avatarSize: CGFloat = 52
     /// Separators start where the text column starts, like Messages.
@@ -54,6 +57,12 @@ struct SessionRow: View {
                     }
                 }
 
+                if layout.placement == .abovePreview, !chipTexts.isEmpty {
+                    HStack(spacing: 4) {
+                        chips
+                    }
+                }
+
                 HStack(spacing: 6) {
                     if liveState != .idle {
                         Circle()
@@ -61,7 +70,9 @@ struct SessionRow: View {
                             .frame(width: 8, height: 8)
                             .accessibilityHidden(true)
                     }
-                    SessionOriginTag(source: session.origin, size: timeSize * 0.85)
+                    if layout.placement == .besidePreview {
+                        chips
+                    }
                     if session.hasDraft {
                         HStack(spacing: 2) {
                             Image(systemName: "pencil")
@@ -71,11 +82,13 @@ struct SessionRow: View {
                         .foregroundStyle(theme.secondaryText)
                         .accessibilityHidden(true)
                     }
-                    Text(previewLine)
-                        .font(.system(size: previewSize))
-                        .foregroundStyle(theme.secondaryText)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+                    if layout.showsPreview {
+                        Text(previewLine)
+                            .font(.system(size: previewSize))
+                            .foregroundStyle(theme.secondaryText)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
                 }
 
                 if let project = shownProject {
@@ -98,8 +111,50 @@ struct SessionRow: View {
         .accessibilityIdentifier("session.row.\(session.id)")
     }
 
+    /// The tags this row shows, in the order Settings puts them, each with the text it carries
+    /// for this chat. A tag with nothing to say draws nothing.
+    private struct Chip: Identifiable {
+        let detail: SessionRowDetail
+        let text: String
+
+        var id: SessionRowDetail { detail }
+    }
+
+    private var chipTexts: [Chip] {
+        layout.chips.compactMap { detail in
+            chipText(detail).map { Chip(detail: detail, text: $0) }
+        }
+    }
+
+    @ViewBuilder private var chips: some View {
+        ForEach(chipTexts) { chip in
+            SessionRowChip(text: chip.text, size: timeSize * 0.85)
+        }
+    }
+
+    private func chipText(_ detail: SessionRowDetail) -> String? {
+        switch detail {
+        case .origin:
+            return SessionOrigin.label(session.origin)
+        case .project:
+            // The chat's project, the same name the project's section header uses.
+            guard let name = session.workspaceName?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty else { return nil }
+            return SessionRowLayout.bounded(name)
+        case .scheduled:
+            return session.isCronSession ? String(localized: "Scheduled") : nil
+        case .group:
+            return session.kind == .botMode ? String(localized: "Group") : nil
+        case .agents:
+            // A single agent is already on the row as its avatar.
+            return session.agentIDs.count > 1 ? SessionRowLayout.bounded(agentNames.joined(separator: ", ")) : nil
+        }
+    }
+
     private var shownProject: String? {
-        guard showsProject, let name = session.workspaceName, !name.isEmpty else { return nil }
+        // The project tag says it in the row's own tags instead, so it never appears twice.
+        guard showsProject, !layout.isShown(.project),
+              let name = session.workspaceName, !name.isEmpty else { return nil }
         return name
     }
 
@@ -153,8 +208,10 @@ struct SessionRow: View {
         ].compactMap { $0 }.joined(separator: ", ")
         let stateLabel = state.isEmpty ? "" : "\(state). "
         let origin = SessionOrigin.label(session.origin).map { " Started in \($0)." } ?? ""
-        let project = shownProject.map { " In project \($0)." } ?? ""
-        return "\(session.title). \(stateLabel)\(preview). \(agentNames.joined(separator: ", ")). \(kind).\(origin)\(project) \(session.updatedAt.formatted(.relative(presentation: .named)))"
+        let projectShown = shownProject != nil || (layout.isShown(.project) && chipText(.project) != nil)
+        let project = projectShown ? session.workspaceName.map { " In project \($0)." } ?? "" : ""
+        let scheduled = layout.isShown(.scheduled) && session.isCronSession ? " Scheduled." : ""
+        return "\(session.title). \(stateLabel)\(preview). \(agentNames.joined(separator: ", ")). \(kind).\(origin)\(project)\(scheduled) \(session.updatedAt.formatted(.relative(presentation: .named)))"
     }
 
     @BighelpThemeReader private var theme
@@ -407,17 +464,175 @@ struct SessionOriginTag: View {
 
     var body: some View {
         if let origin = SessionOrigin.label(source) {
-            Text(origin)
-                .font(.system(size: size, weight: .semibold))
-                .foregroundStyle(theme.secondaryText)
-                .lineLimit(1)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
-                .background(theme.incomingMessageBackground, in: .capsule)
-                .fixedSize()
+            SessionRowChip(text: origin, size: size)
                 .accessibilityLabel("Started in \(origin)")
         }
     }
+}
+
+/// A small capsule of plain text on a chat row or a list: where a chat started, its project,
+/// and the rest of the tags Settings › Appearance › Chat rows offers.
+struct SessionRowChip: View {
+    let text: String
+    var size: CGFloat = 13
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: size, weight: .semibold))
+            .foregroundStyle(theme.secondaryText)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 1)
+            .background(theme.incomingMessageBackground, in: .capsule)
+            .fixedSize()
+    }
 
     @BighelpThemeReader private var theme
+}
+
+/// One more tag a chat row can carry (Settings › Appearance › Chat rows). Every case reads a
+/// field `SessionSummary` already has, so a row never asks the host for anything new.
+enum SessionRowDetail: String, CaseIterable, Codable, Identifiable, Sendable {
+    case origin
+    case project
+    case scheduled
+    case group
+    case agents
+
+    var id: Self { self }
+
+    /// The name in Settings.
+    var title: String {
+        switch self {
+        case .origin: String(localized: "Where it started")
+        case .project: String(localized: "Project")
+        case .scheduled: String(localized: "Scheduled")
+        case .group: String(localized: "Group")
+        case .agents: String(localized: "Agent names")
+        }
+    }
+
+    /// What the tag says on a row, as Settings describes it.
+    var detail: String {
+        switch self {
+        case .origin: String(localized: "Telegram, Codex, Hermes Desktop and the rest")
+        case .project: String(localized: "The chat's project, when it's in one")
+        case .scheduled: String(localized: "A chat a scheduled task started")
+        case .group: String(localized: "A chat with more than one agent")
+        case .agents: String(localized: "Every agent's name in a group chat")
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .origin: "arrow.up.forward.app"
+        case .project: "folder"
+        case .scheduled: "clock.arrow.circlepath"
+        case .group: "person.2"
+        case .agents: "person.2.badge.gearshape"
+        }
+    }
+}
+
+/// Where the tags sit on a row.
+enum SessionRowChipPlacement: String, CaseIterable, Codable, Identifiable, Sendable {
+    /// Beside the preview, where the tag for where a chat started has always been.
+    case besidePreview
+    /// On a line of their own under the title, which keeps the preview whole.
+    case abovePreview
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .besidePreview: String(localized: "Beside the preview")
+        case .abovePreview: String(localized: "On their own line")
+        }
+    }
+}
+
+/// What a chat row shows, saved as JSON text (Settings › Appearance › Chat rows).
+/// `.standard` is exactly the row bighelp draws by default: the tag for where a chat started,
+/// beside its preview, with its time.
+struct SessionRowLayout: Equatable, Sendable {
+    /// UserDefaults' key, beside the rest of the chat list's look.
+    static let key = "bighelp.chat-list.row-layout"
+    /// A row's text column is narrow on a phone; three tags leave the preview room to read.
+    static let maximumChips = 3
+    /// A project or a run of agent names is bounded so its tag never crowds the rest of the row.
+    static let maximumChipText = 24
+
+    /// The tags the row shows, in the order it shows them.
+    private(set) var chips: [SessionRowDetail]
+    var placement: SessionRowChipPlacement
+    var showsPreview: Bool
+    var showsTime: Bool
+
+    static let standard = SessionRowLayout(chips: [.origin])
+
+    init(chips: [SessionRowDetail],
+         placement: SessionRowChipPlacement = .besidePreview,
+         showsPreview: Bool = true,
+         showsTime: Bool = true) {
+        var seen = Set<SessionRowDetail>()
+        self.chips = Array(chips.filter { seen.insert($0).inserted }.prefix(Self.maximumChips))
+        self.placement = placement
+        self.showsPreview = showsPreview
+        self.showsTime = showsTime
+    }
+
+    func isShown(_ detail: SessionRowDetail) -> Bool { chips.contains(detail) }
+
+    var canShowMore: Bool { chips.count < Self.maximumChips }
+
+    mutating func show(_ detail: SessionRowDetail) {
+        guard canShowMore, !chips.contains(detail) else { return }
+        chips.append(detail)
+    }
+
+    mutating func hide(_ detail: SessionRowDetail) {
+        chips.removeAll { $0 == detail }
+    }
+
+    /// Drags a tag to a new place in the row. A tag Settings doesn't list can't arrive here.
+    mutating func moveChips(from source: IndexSet, to destination: Int) {
+        chips.move(fromOffsets: source, toOffset: destination)
+    }
+
+    /// Shortens a tag's text to what a row can carry, ending it with an ellipsis.
+    nonisolated static func bounded(_ text: String) -> String {
+        guard text.count > maximumChipText else { return text }
+        return String(text.prefix(maximumChipText - 1)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
+    /// Saved as JSON text; anything unreadable is the standard row.
+    init(saved text: String?) {
+        guard let text, text.utf8.count <= 2_048,
+              let raw = try? JSONDecoder().decode(Raw.self, from: Data(text.utf8)) else {
+            self = .standard
+            return
+        }
+        self.init(chips: raw.chips.compactMap(SessionRowDetail.init(rawValue:)),
+                  placement: SessionRowChipPlacement(rawValue: raw.placement) ?? .besidePreview,
+                  showsPreview: raw.preview,
+                  showsTime: raw.time)
+    }
+
+    /// What UserDefaults holds: the saved JSON text.
+    init(savedObject object: Any?) {
+        self.init(saved: object as? String)
+    }
+
+    var saved: String? {
+        let raw = Raw(chips: chips.map(\.rawValue), placement: placement.rawValue,
+                      preview: showsPreview, time: showsTime)
+        return (try? JSONEncoder().encode(raw)).flatMap { String(data: $0, encoding: .utf8) }
+    }
+
+    private struct Raw: Codable {
+        let chips: [String]
+        let placement: String
+        let preview: Bool
+        let time: Bool
+    }
 }

@@ -10,6 +10,8 @@ enum SettingsDestination: Hashable, Sendable {
     case you
     /// Appearance › Chat layout.
     case chatLayout
+    /// Chat › Chat rows: the tags each chat shows under its title, in what order, and where.
+    case chatRows
 
     /// Appearance › Thinking: the look of the Thinking control.
     case thinking
