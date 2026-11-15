@@ -353,7 +353,9 @@ struct SessionRowSettingsView: View {
                     .accessibilityElement(children: .contain)
                     .accessibilityIdentifier("chat-rows.shown.\(detail.rawValue)")
                 }
-                .onMove { update { $0.moveChips(from: $0, to: $1) } }
+                .onMove { source, destination in
+                    update { $0.moveChips(from: source, to: destination) }
+                }
             } header: {
                 Text("Shown on a row")
             } footer: {
